@@ -1,381 +1,134 @@
-[ **中文** | [English](./README_EN.md) \]
+# CHIP2026 PatientPheX: 表型概念识别与患者个体化关联
 
-# 面向生物医学全文的特定患者表型概念识别任务
+本项目针对 **CHIP2026 面向生物医学全文的特定患者表型概念识别任务 (PatientPheX)** 开发。
+项目包含完整的**规则基线 (CPU即跑)** 与 **GPU 进阶方案 (SapBERT 软匹配 + 8B LLM 判别/微调)**。
 
-<p align="center">
-        ⭐ <a href="https://tianchi.aliyun.com/competition/entrance/532512/information?lang=zh-cn">天池评测网址</a>&nbsp&nbsp | &nbsp&nbsp📅 <a href="http://cips-chip.org.cn/2026/">CHIP会议网址<a>&nbsp&nbsp | &nbsp&nbsp🗂️<a href="https://tianchi.aliyun.com/competition/entrance/532512/information">评测数据</a>&nbsp&nbsp | &nbsp&nbsp📃 <a href="">数据集论文(稍后发布)</a>
-<br>
-<br>
-</p>
+---
 
-- [面向生物医学全文的特定患者表型概念识别任务](#面向生物医学全文的特定患者表型概念识别任务)
-  - [任务背景](#任务背景)
-  - [任务内容](#任务内容)
-  - [数据集介绍](#数据集介绍)
-    - [1. 数据规模](#1-数据规模)
-    - [2. 数据样例](#2-数据样例)
-    - [3. 字段说明](#3-字段说明)
-  - [结果提交](#结果提交)
-    - [1. 提交方式](#1-提交方式)
-    - [2. 提交格式](#2-提交格式)
-  - [评测指标](#评测指标)
-    - [子任务1：全文表型概念识别](#子任务1全文表型概念识别)
-      - [（1）实体提及级别评价（Mention-level Evaluation）](#1实体提及级别评价mention-level-evaluation)
-      - [（2）文档级别评价（Document-level Evaluation）](#2文档级别评价document-level-evaluation)
-      - [关于否定/复合/无ID实体判定说明](#关于否定复合无id实体判定说明)
-    - [子任务2：特定患者表型概念识别](#子任务2特定患者表型概念识别)
-      - [（1）微平均F1值（Micro-F1）](#1微平均f1值micro-f1)
-      - [（2）宏平均F1值（Macro-F1）](#2宏平均f1值macro-f1)
-    - [评价总指标](#评价总指标)
-    - [Baseline系统](#baseline系统)
-  - [奖励设置](#奖励设置)
-  - [参赛规则](#参赛规则)
-  - [获奖队伍材料提交](#获奖队伍材料提交)
-  - [日程安排](#日程安排)
-  - [评测任务组织者](#评测任务组织者)
-  - [参考文献](#参考文献)
+## 目录与架构设计
 
-
-## 任务背景
-
-人类表型（Phenotype）是指由基因型与环境共同作用产生、能够在患者身上观察或测量到的临床特征（如身高、血压、症状组合、药物反应等）。表型不仅是疾病的外在表现描述，也是罕见病诊断、疾病机制研究、基因发现和精准医疗的重要依据。随着生物医学文献的快速增长，如何从海量非结构化文本中自动抽取、标准化和组织患者表型知识，已成为生物医学信息处理领域的重要研究方向。
-
-表型概念识别（Phenotype Concept Recognition）目标从生物医学文本中，自动识别出表型实体并将其标准化至本体库中的标准概念，仍面临着诸多挑战。一方面，生物医学全文篇幅长，表型描述形式多样，存在缩写、省略表达、否定、复合实体等复杂现象，增加了识别难度；另一方面，人类表型本体（HPO）[1]概念规模庞大、层次结构复杂，单纯依赖字符串匹配难以准确完成表型标准化映射。此外，现有研究[2-4]多数关注从给定短文本中识别出所有表型概念，而缺少研究全文的特定患者表型概念信息抽取。在生物医学文献中，往往同时存在多个患者或家系成员，不同个体可能具有不同的临床表现，仅抽取表型实体难以满足患者画像构建、家系遗传分析及个体化医学研究的需求。
-
-因此，本评测任务将聚焦“面向生物医学全文的特定患者表型概念识别”，旨在从文献中自动识别给定患者的表型概念信息，建立患者与表型之间的对应关系，为患者级知识库构建、基因型\-表型关联等下游研究以及精准医疗应用提供技术支撑。
-
-## 任务内容
-
-本评测任务面向PMC公开的生物医学文献全文，评估和比较各参赛模型在患者表型个体化信息抽取任务中的性能。任务以生物医学文献全文作为输入，模型目标自动识别特定患者的表型概念信息，共包含两个子任务：
-
-- **子任务1-全文表型概念识别**：不区分患者，从文献全文中识别出所有表型概念，包括文中具体位置，并将其标准化映射至人类表型本体（HPO，统一使用v2026\-06\-23版本，Phenotypic abnormality （HP:0000118）分支）对应术语概念。
-- **子任务2-特定患者表型概念识别**：给定特定患者，识别出与该患者相关的表型概念，给出相关表型的HPO标识符集合。
-
-参赛队伍可采用传统机器学习方法、深度学习模型、预训练语言模型或大语言模型等技术方案完成任务（要求模型参数不超过10B），可结合提示学习、监督微调、检索增强生成（RAG）等方法，但需在技术报告中说明所采用的模型及外部知识资源，不允许使用外部人工标注表型数据集。
-
-## 数据集介绍
-
-本任务构建了一个专门用于评估患者表型个体化信息抽取的数据集PatientPheX。数据集来源于PMC公开发表的生物医学文献，目前共包含200篇全文级标注文献。每篇文献均经过人工标注，包含患者信息、表型实体及患者与表型之间的关联关系，为全文级特定患者表型概念识别任务提供统一的评测基准。
-
-
-### 1. 数据规模
-
-PatientPheX数据集共包含200篇全文级PMC生物医学文献，其中训练集80篇、开发集（A榜测试集）20篇、测试集（B榜测试集）100篇。数据集共标注506位患者、15,193个表型实体和2,874个唯一HPO概念，并标注了否定表型及复合表型等复杂现象。其中开发集和测试集不包含标准答案，需在线提交预测结果。
-
-|**统计项**|**训练集**|**开发集**|**测试集**|**总共**|
-|---|---|---|---|---|
-|文献数|80|20|100|200|
-|患者数|209|53|244|506|
-|表型实体数|6027|1563|7603|15193|
-|唯一 HPO ID 数|1662|551|1863|2874|
-|否定表型数|171|38|226|435|
-|复合表型数|69|5|138|212|
-|患者表型关联数|2307|563|2786|5656|
-|患者相关唯一 HPO ID 数|1091|351|1252|1995|
-
-
-### 2. 数据样例
-
-```JSON
-{
-  "pmc_id": "12652105",
-  "pmid": "41300704",
-  "patient": [
-    {
-    "patient_id": "OII.1",
-    "mention": [{
-                    "text": "an 18-year-old female",
-                    "offset": 10434,
-                    "length": 21
-                },
-                {
-                    "text": "patient one (II.1)",
-                    "offset": 12645,
-                    "length": 18
-                }]
-    },
-    {
-    "patient_id": "OII.2",
-    "mention": [{
-                    "text": "Patient II.2",
-                    "offset": 13059,
-                    "length": 12
-                }]
-    },
-    ...
-  ],
-  "full_text": [
-    {
-      "section_type": "TITLE",
-      "type": "front",
-      "offset": 0,
-      "text": "Rare Duplication in the RYR1 Gene Causing Malignant Hyperthermia and Clinical Variability"
-    },
-    {
-      "section_type": "ABSTRACT",
-      "type": "abstract",
-      "offset": 90,
-      "text": "..."
-    },
-    ...
-  ],
-  "entities": [
-    {"identifier": "HP:0002047",
-      "type": "Phenotype",
-      "offset": 42,
-      "length": 22,
-      "text": "Malignant Hyperthermia",
-      "note": null},
-      ...
-   ],
-   "association": [
-    {
-      "patient_id": "OII.1",
-      "phenotype": ["HP:0003938", "HP:0001945", "HP:0002063", ...],
-    },
-    {
-      "patient_id": "OII.2",
-      "phenotype": ["HP:0001762", "HP:0000508",...],
-    },
-  ...
-  ]
-}
+```text
+chip2026-patientphex/
+├── README.md                  # 本说明文档
+├── data/
+│   ├── raw/                   # 官方原始数据集 (train, A榜测试集, hp.obo)
+│   └── processed/             # 预处理缓存与 SFT 训练数据
+├── src/
+│   ├── data_loader.py         # HPO本体解析 (hp.obo) 与 JSONL 读写
+│   ├── metrics.py             # 官方全套评测指标 (Mention F1, Doc F1, Micro F1, Macro F1)
+│   ├── dictionary_extractor.py# 词典前缀索引与实体最长匹配抽取
+│   ├── baseline_rule.py       # 规则基线 (CPU可直接运行，整体分 0.5675)
+│   ├── sapbert_matcher.py     # [GPU/进阶] SapBERT 实体召回与 HPO 向量检索脚本
+│   └── prepare_sft_data.py    # [GPU/进阶] 8B 大模型微调数据构造 (否定判定 + 患者关联)
+├── submissions/
+│   └── baseline_rule_A.jsonl  # 已生成的 A 榜提交文件
+└── tests/
+    └── test_metrics.py        # 指标与解析器测试
 ```
 
-### 3. 字段说明
+---
 
-数据集采用Jsonl格式组织，每行对应一篇文献，主要包含文献信息、特定患者信息、全文内容、正文所有表型实体、患者对应的表型信息。主要字段说明如下。
+## 快速上手
 
-|**字段**|**二级字段**|**示例**|**说明**|
-|---|---|---|---|
-|pmc\_id||12652105|PMC全文编号|
-|pmid||41300704|PubMed文献编号|
-|patient|||本文指定患者|
-||patient\_id|OII\.1|患者唯一标识，文章出现具体编号则“O\+文中的编号”，其他为P开头按出现顺序编号|
-||mention|patient one \(II\.1\)|患者文中具体提及，包含位置信息,该患者在正文中的部分有效文本指称（非全部指称）|
-|full\_text|||文献全文正文内容|
-||section\_type|TITLE|章节类别|
-||type|front|BioC passage的细粒度类型|
-||offset|0|该章节在原始完整全文中的全局起始字符位置|
-||text||section的原始文本|
-|entities|||正文部分所有表型信息|
-||identifier|HP:0002047|标准化 HPO ID，复合表型使用分号分隔，无有效ID时为`-1`|
-||type|Phenotype|实体类型，当前为`Phenotype`|
-||offset|42|实体在原始完整全文中的全局字符位置|
-||length|22|实体文本的字符长度|
-||text|Malignant Hyperthermia|实体在原文中的实际文本|
-||note|null/No|附加标记；默认null；`NO`表示否定表型|
-|association|||文中所有患者关联信息|
-||patient\_id|OII\.1|患者唯一标识|
-||association\.phenotype||患者关联的表型字符串列表：有效表型保存 HPO ID；ID 为 `-1` 的表型保存原文文本|
+### 1. CPU 环境（直接运行规则基线）
 
+无需 GPU，在当前轻量机器上即可运行：
 
-## 结果提交
+```bash
+# 1. 运行测试
+python3 -m pytest tests/test_metrics.py
 
-### 1. 提交方式
-
-比赛设立**A榜阶段**与**B榜阶段**两个赛段，具体安排如下：
-
-- A榜阶段（开发阶段）：参赛队伍在成功报名后，可通过天池平台下载训练数据和A榜测试数据集（开发集）文件，在本地进行模型调试与训练，并在线提交评测结果。A榜阶段成绩仅用于模型开发调优，不计入比赛最终成绩。
-- B榜阶段（最终评测）：B榜阶段将开放B榜测试数据集（测试集）供下载，参赛队伍需根据该数据集生成预测结果并提交至天池平台，**各队伍在B榜阶段的历史最优成绩作为最终排名与奖项评定的依据**。
-
-**提交说明**
-
-- A榜每支参赛队伍每日最多可向天池平台提交5次评测结果，B榜每日3次。
-- 排行榜整点更新，按评测指标从高到低进行排名。
-- 评测失败不扣除提交次数。
-  
-  ### 2. 提交格式
-  
-  A榜和B榜均要求提交对应测试集预测结果的Jsonl文件，文件编码为UTF\-8，格式和训练集中结果格式一致，可参考数据集中提交样例，具体格式参考如下：
-
-```JSON
-{
-  "pmc_id": "...",
-  "pmid": "...",
-  "entities": [
-    {"identifier": "HP:0000519",
-      "type": "Phenotype",
-      "offset": 206,
-      "length": 30,
-      "text": "bilateral congenital cataracts",
-      "note": null},
-      ...
-   ],
-   "association": [
-    {
-      "patient_id": "P1",
-      "phenotype": ["HP:0011410",...],
-    },
-    ...
-  ]
-}
+# 2. 运行规则基线并在训练集上评测
+python3 src/baseline_rule.py
 ```
 
-字段说明：
-
-- entities：全文所有表型实体预测结果
-- association：特定患者的表型实体预测结果
-
-## 评测指标
-
-### 子任务1：全文表型概念识别
-
-对于全文表型概念识别与标准化任务，本任务从**实体提及级别**和**文档级别**两个粒度对模型性能进行评价。
-
-#### （1）实体提及级别评价（Mention\-level Evaluation）
-
-实体提及级评价用于衡量模型对具体表型文本实体的识别和标准化能力。
-
-对于每一个预测表型实体，只有当模型预测的表型实体边界与真实标注完全一致，且其对应的HPO概念标识正确时，才被视为正确预测（TP）。若模型预测的表型实体不存在于真实标注集合中，则记为假阳性（FP）；若真实标注中的表型实体未被模型正确识别，则记为假阴性（FN）。
-
-实体提及级别精确率（Precision）、召回率（Recall）和F1值指标定义如下：
-
-$P_{men} =\frac{TP}{TP+FP}$
-
-$R_{men} =\frac{TP}{TP+FN}$
-
-$F1_{men} =\frac{2\times P_{men} \times R_{men} }{P_{men} +R_{men} }$
-
-#### （2）文档级别评价（Document\-level Evaluation）
-
-文档级评价用于衡量模型是否能够识别文献中出现的表型概念集合。
-
-对于每篇文档，将所有真实标注表型实体对应的HPO ID去重后形成真实表型集合：
-
-$G_d=\{h_1,h_2,\dots,h_n\}$
-
-将模型预测结果中的HPO ID去重后形成预测表型集合：
-
-$P_d=\{h_1,h_2,\dots,h_m\}$
-
-在文档级评价中，只关注HPO概念是否在文档中被识别，不考虑其具体出现位置、边界与出现次数。 若某一HPO ID同时存在于真实集合Gd和预测集合Pd中，则认为该概念预测正确。
-
-文档级的TP、FP和FN定义如下，其中N表示测试文档数量：
-
-$TP_{doc} = \sum_{d=1}^{N}|G_d\cap P_d|$
-
-$FP_{doc} = \sum_{d=1}^{N}|P_d-G_d|$
-
-$FN_{doc} = \sum_{d=1}^{N}|G_d-P_d|$
-
-基于上述统计量计算文档级Precision、Recall和F1：
-
-$P_{doc} = \frac{TP_{doc}} {TP_{doc}+FP_{doc}}$
-
-$R_{doc} = \frac{TP_{doc}} {TP_{doc}+FN_{doc}}$
-
-$F1_{doc} = \frac{ 2\times P_{doc}\times R_{doc} } { P_{doc}+R_{doc} }$
-
-#### 关于否定/复合/无ID实体判定说明
-
-- 否定表型（note="NO"）：表示文本中明确否定的临床表现，不属于患者实际表型信息，因此不作为正例参与评价。评测时，金标准中标记为 `note="NO"` 的实体不计入 FN；对于预测结果，若模型正确将该实体标记为 `note="NO"`，则不计入评价；若模型将该否定表型预测为普通表型（即未标记 `note="NO"`），则作为错误预测，计为 FP；若模型未预测该否定表型，则不计分。
-- 复合表型（ID用分号隔开，如"HP:xxxxxx;HP:xxxxxxx"）：对于一个表型实体对应多个HPO ID的情况，评测时将多个 HPO ID 按分号拆分为独立评价单元，并分别进行匹配计算。
-- 无ID表型（ID为\-1）：预测实体位置信息正确即为正确。
-
-### 子任务2：特定患者表型概念识别
-
-对于患者表型个体化关系抽取任务，评价对象为患者与表型之间的关联关系。仅当模型准确关联给定患者对应表型时，该患者-表型映射才被视为正确预测（TP）。若模型错误地将某表型归属于该患者，则记为假阳性（FP）；若模型未能识别该患者关联的真实表型，则记为假阴性（FN）。
-
-#### （1）微平均F1值（Micro-F1）
-
-Micro-F1从全局角度评估所有患者-表型映射关系的整体抽取性能。指标将测试集视为一个整体，将所有文档中的 TP、 FP 和 FN 进行全局累加，计算公式如下：
-
-$P_{micro}=\frac{\sum TP}{\sum TP+\sum FP}$
-
-$R_{micro}=\frac{\sum TP}{\sum TP+\sum FN}$
-
-$F1_{micro}=\frac{2\times P_{micro}\times R_{micro}}{P_{micro}+R_{micro}}$
-
-
-#### （2）宏平均F1值（Macro-F1）
-
-Macro-F1 以单个患者为单位分别计算 Precision、Recall 和 F1，并对测试集中所有患者的指标进行等权平均，用于评价模型识别患者个体化表型的能力。
-
-对于第 $i$ 位患者，设真实表型集合为 $y_i$，预测表型集合为 $\hat{y}_i$，其 Precision、Recall、F1 分别定义为：
-
-$P_i=\frac{|y_i\cap\hat{y}_i|}{|\hat{y}_i|}$
-
-$R_i=\frac{|y_i\cap\hat{y}_i|}{|y_i|}$
-
-
-$F1_i=\frac{2\times P_i\times R_i}{P_i+R_i}$
-
-测试集的 Macro-Precision、Macro-Recall 和 Macro-F1 分别定义为：
-
-$P_{macro}=\frac{1}{K}\sum_{i=1}^{K}P_i$
-
-$R_{macro}=\frac{1}{K}\sum_{i=1}^{K}R_i$
-
-$F1_{macro}=\frac{1}{K}\sum_{i=1}^{K}F1_i$
-
-其中，K 表示测试集中金标准患者的总数。当某位患者的真实表型集合与预测表型集合均为空时，该患者的 Precision、Recall 和 F1 均定义为 $1$。
-
-### 评价总指标
-
-本评测综合考虑两个子任务的性能表现，最终得分（Score）由任务1以及任务2的指标加权计算得到：
-
-$Score= 0.25\times (F1_{men} + F1_{doc}) + 0.25\times (F1_{micro} + F1_{macro})$
-
-### Baseline系统
-Baseline方法首先用指定版本HPO训练的PhenoTagger进行子任务1；随后使用 Qwen3-8B 大语言模型，通过提示词工程识别文本中指定患者的相关提及，再结合上下文将患者与已识别的表型实体进行关联，预测子任务2。整体方法并未使用训练集优化。
-
-## 奖励设置
-
-本任务为学术评测任务，获奖队伍将会获得获奖证书，进行大会汇报、发表英文评测论文（EI收录）。
-
-## 参赛规则
-
-1. 每名选手仅限注册一个账号，一旦发现选手注册多个账号进行提交，将取消所有账号的参赛资格。
-2. 在A榜结束前，填写报名信息表[点击此处](https://docs.qq.com/form/page/DRE5IVEJJbnRvZkhK)
-3. 允许使用外部资源，包括但不限于代码、工具和知识库，但不允许使用外部人工标注表型数据集，要求所使用的资源是公开可获取，须注明来源。
-4. 获奖队伍需要注册并参加CHIP会议，在会议上进行口头汇报，撰写技术论文，否则取消参赛成绩，名次递补。（注：会议注册费、食宿交通费用由参赛团队自理）。
-5. 国内外在校生及企业人员均可参赛，个人须依托单位报名参赛，比赛组织方成员不得参赛。实名认证说明：参加比赛的队伍（包括队长及全体队伍成员）需要在报名截止前完成实名认证（认证入口：官网\-右上角个人中心\-认证），未完成认证的参赛队伍将被取消比赛资格。
-6. 组队人数限制1\-5人。
-8. 该任务数据仅用于本次评测，如需用于其他目的，请与任务组织者联系。
-
-## 获奖队伍材料提交
-
-获奖队伍需提交如下材料：
-
-1. 相关代码及说明。
-2. 评测论文，可参考往届CHIP会议评测论文（[http://www.cips-chip.org.cn/2024/accepted](http://www.cips-chip.org.cn/2024/accepted)）。
-3. 如果方法使用了额外公开的资源，要求说明并提供资源文件或地址，包括但不限于代码、工具和知识库。要求所使用的资源是公开可获取的。
-
-选手需要将以上材料在评测论文提交截止日期前发送至邮箱，邮箱地址：dutir_bionlp@163.com，邮件的标题为：“CHIP2026Task-评测材料-参赛队伍名称”。代码及文档需打包成一个文件（zip，rar等均可），作为邮件附件传送。
-
-说明： 若没有提交上述材料，将视为自动放弃参与评奖。评奖资格将会自动顺延至排名紧随其后的队伍。
-
-## 日程安排
-| 事项 | 时间 |
-|---|---|
-|报名时间|8月20日-9月27日|
-|A榜评测开始|8月20日|
-|A榜评测截止|9月27日|
-|B榜评测开始|9月28日|
-|B榜评测截止|10月1日|
-|评测论文提交截止|10月15日|
-|会议日期|10月30日\-11月1日|
-
-## 评测任务组织者
-
-**组织单位**\
-大连理工大学       罗凌、王健、孙媛媛、林鸿飞
-
-**联系人**\
-朱旋律（xlzhu@mail\.dlut\.edu\.cn）
-
-**相关网站链接**\
-CHIP官网：http://cips-chip.org.cn/ \
-天池平台：https://tianchi.aliyun.com/competition/entrance/532512
-
-**钉钉群**\
-大赛官方钉钉群请扫码加入，最新通知将会第一时间在群内同步。
-
-<img src=https://static.tianchi.aliyun.com/tianchi/race/images/prod/532512/1242990779776242/otzc88vq6rj6nqcs.png width="300">
-
-## 参考文献
-[1] Gargano MA, Matentzoglu N, Coleman B, et al. The Human Phenotype Ontology in 2024: phenotypes around the world. Nucleic acids research. 2024;52(D1):D1333-46.\
-[2] Luo L, Yan S, Lai PT, et al. PhenoTagger: a hybrid method for phenotype concept recognition using human phenotype ontology. Bioinformatics. 2021;37(13):1884-90.\
-[3] Feng Y, Qi L, Tian W. PhenoBERT: a combined deep learning method for automated recognition of human phenotype ontology. IEEE/ACM Transactions on Computational Biology and Bioinformatics. 2022;20(2):1269-77.\
-[4] Tao Y, Huang Y, Wang Y, et al. AutoPCR: automated phenotype concept recognition by prompting. Bioinformatics. 2026;42(Supplement_1):btag304.
+**当前规则基线表现 (80 篇训练集实测)**：
+- **Overall Score**: `0.5675`
+- Subtask 1 Mention F1: `0.6553` (P: 0.8363, R: 0.5388)
+- Subtask 1 Doc F1: `0.7086` (P: 0.9148, R: 0.5782)
+- Subtask 2 Micro F1: `0.4994` (P: 0.4325, R: 0.5909)
+- Subtask 2 Macro F1: `0.4066` (P: 0.3845, R: 0.5630)
+- **已输出 A 榜预测文件**: `submissions/baseline_rule_A.jsonl`
+
+---
+
+## GPU 进阶提升方案（本地显卡 / 服务器执行）
+
+当前分析发现，训练集中 **41.88% 的金标准实体未被词典硬匹配命中**（例如缩写 `SNHL` -> `Sensorineural hearing impairment`、复数形式 `developmental delays`、同义变体 `diabetes` 等）。同时，患者关联目前仅靠距离规则，Precision 仅约 40%。
+
+提升核心分为两步：**SapBERT 软匹配召回** 与 **8B 模型语义判别**。
+
+### 阶段一：用 SapBERT 提升子任务 1 召回率 (Recall)
+
+#### 1. 依赖安装
+```bash
+pip install torch transformers sentence-transformers faiss-gpu faiss-cpu scikit-learn
+```
+
+#### 2. 原理与流程
+- **模型**：`cambridgeltl/SapBERT-from-PubMedBERT-fulltext`（生物医学专用的实体对齐模型，仅约 400MB 显存）。
+- **离线构建向量库**：
+  1. 将 `hp.obo` 中 1.7 万个 HPO 概念的名字与同义词，通过 SapBERT 编码为 768 维稠密向量，存入 FAISS 索引；
+  2. 对文章中未被词典硬命中的潜在医学短语（可由 Stanza 或 BioBERT 抽取），计算向量余弦相似度；
+  3. 取 Top-3 候选（相似度阈值例如 > 0.82）作为有效表型。
+
+---
+
+### 阶段二：用 8B 模型做精准否定过滤与患者关联
+
+#### 1. 为什么用 8B？
+- **否定判断 (Subtask 1)**：消除 `ruled out` / `unremarkable` / 假阳性。
+- **患者关联 (Subtask 2)**：判断一段病历中提到的症状属于哪个患者（先证者 vs 亲属 vs 既往排除病史）。
+
+#### 2. 生成微调训练数据
+在项目根目录运行数据转换脚本：
+```bash
+python3 src/prepare_sft_data.py
+```
+该脚本会将 80 篇训练集转化为 Alpaca 格式的微调数据：
+- `data/processed/sft_negation.json`: 句子级表型否定二分类数据（YES / NO）
+- `data/processed/sft_association.json`: 患者临床病史切片与真实确诊 HPO ID 关联问答
+
+#### 3. 运行 8B LoRA 微调（以 Qwen2.5-7B/8B 为例）
+推荐使用 **LLaMA-Factory** 或 **Unsloth**（单张 RTX 3090/4090 或 A10/A100 几十分钟即可训完）：
+
+```bash
+# 使用 llama-factory 示例
+llamafactory-cli train \
+    --stage sft \
+    --do_train \
+    --model_name_or_path Qwen/Qwen2.5-7B-Instruct \
+    --dataset patient_assoc \
+    --template qwen \
+    --finetuning_type lora \
+    --output_dir saves/qwen-patient-lora \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 8 \
+    --lr_scheduler_type cosine \
+    --logging_steps 10 \
+    --save_steps 100 \
+    --learning_rate 1e-4 \
+    --num_train_epochs 3.0 \
+    --fp16
+```
+
+#### 4. 推理与提交
+微调后加载权重预测 A 榜测试集：
+```bash
+python3 src/inference_8b.py --lora_dir saves/qwen-patient-lora --output submissions/8b_final_A.jsonl
+```
+
+---
+
+## 本地与服务器快速同步指南 (SCP / Rsync)
+
+你可以将服务器上的完整仓库（包含已生成的微调数据集与脚本）直接同步到本地：
+
+```bash
+# 在你本地笔记本/GPU电脑的终端运行：
+scp -r ubuntu@<服务器IP>:/home/ubuntu/projects/chip2026-patientphex/ ./chip2026-patientphex/
+```
+
+同步完成后，在本地即可：
+1. 直接使用现成的 SFT 数据集进行 LoRA 微调；
+2. 运行 `python src/inference_8b.py` 完成 GPU 上的高质量推理预测。
