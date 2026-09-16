@@ -190,13 +190,26 @@ def run_post_eval_and_submission(model_path: str, lora_path: str):
     sub_path = repo_root / "submissions" / "qwen3_8b_final_A.jsonl"
     cmd = [
         sys.executable,
+        "-u",
         str(repo_root / "src" / "inference_8b.py"),
         "--base_model", model_path,
         "--lora_dir", lora_path,
         "--output", str(sub_path),
     ]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8")
-    log(proc.stdout)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        bufsize=1,
+    )
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+            f.write(line)
+            f.flush()
+    proc.wait()
     log(f"A-test final submission generated at: {sub_path}")
     log("All pipeline steps for Qwen3-8B successfully completed!")
 

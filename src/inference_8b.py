@@ -86,13 +86,14 @@ def main():
     import torch
 
     test_docs = load_jsonl(args.input_file)
-    print(f"Predicting {len(test_docs)} documents...")
+    print(f"Predicting {len(test_docs)} documents...", flush=True)
     out_docs = []
 
     for doc_idx, doc in enumerate(test_docs):
         pmc_id = doc["pmc_id"]
         pmid = doc.get("pmid")
         patients = doc.get("patient", [])
+        print(f"[{doc_idx + 1}/{len(test_docs)}] Processing PMC{pmc_id} ({len(patients)} patients)...", flush=True)
 
         # Subtask 1: GPU SapBERT soft-matching + dictionary
         gpu_pred = pipeline.predict_doc(doc, use_sapbert=True)
@@ -112,14 +113,16 @@ def main():
         if not full_clinical_text:
             full_clinical_text = "\n\n".join([s.get("text", "") for s in doc.get("full_text", [])[:5]])
 
-        # Subtask 2: Query Qwen3.5 for each patient
+        # Subtask 2: Query Qwen3 for each patient
         pred_associations = []
-        for p in patients:
+        for p_idx, p in enumerate(patients):
             pid = p["patient_id"]
             mentions = [m.get("text", "") for m in p.get("mention", [])]
+            print(f"  -> Patient [{p_idx + 1}/{len(patients)}] '{pid}' ({len(candidate_hpos)} cand HPOs)...", end="", flush=True)
 
             if not candidate_hpos:
                 pred_associations.append({"patient_id": pid, "phenotype": []})
+                print(" done (0 cand).", flush=True)
                 continue
 
             prompt = (
@@ -155,6 +158,7 @@ def main():
                 "patient_id": pid,
                 "phenotype": assigned_hpos
             })
+            print(f" done ({len(assigned_hpos)} assoc).", flush=True)
 
         out_docs.append({
             "pmc_id": pmc_id,
@@ -162,11 +166,9 @@ def main():
             "entities": pred_entities,
             "association": pred_associations,
         })
-        if (doc_idx + 1) % 10 == 0 or doc_idx == len(test_docs) - 1:
-            print(f"Processed {doc_idx + 1}/{len(test_docs)} docs...")
 
     save_jsonl(out_docs, args.output)
-    print(f"Predictions successfully saved to {args.output}")
+    print(f"Predictions successfully saved to {args.output}", flush=True)
 
 
 if __name__ == "__main__":
