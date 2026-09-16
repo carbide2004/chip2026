@@ -26,14 +26,16 @@ chip2026-patientphex/
 │   ├── inference_8b.py        # [GPU] Qwen3.5 + SapBERT 端到端推理脚本
 │   └── prepare_sft_data.py    # [GPU] Qwen3.5 指令微调数据构造
 ├── scripts/
-│   ├── run_zeroshot_submission.py # [推荐提交] Qwen3-8B Zero-Shot 语义验证 A 榜生成脚本
+│   ├── run_optimized_v2.py    # [🌟最新推荐] 区域加权语义过滤 + 增强否定 A 榜生成脚本
+│   ├── run_zeroshot_submission.py # Qwen3-8B Zero-Shot A 榜生成脚本 (得分 0.5992)
 │   ├── run_fast_inference.py  # [GPU] 流式推理与 A 榜预测文件生成脚本
 │   └── auto_qwen3_8b_pipeline.py # Qwen3-8B 自动化下载、Zero-shot与16-bit LoRA微调流水线
 ├── submissions/
-│   ├── baseline_rule_A.jsonl  # 纯规则基线 A 榜预测文件
-│   ├── sapbert_rule_A.jsonl   # GPU SapBERT 增强版 A 榜预测文件
-│   ├── qwen3_8b_zeroshot_A.jsonl # [推荐] SapBERT + Qwen3-8B Zero-Shot A 榜预测文件
-│   └── qwen3_8b_final_A.jsonl # SapBERT + Qwen3-8B LoRA 预测文件
+│   ├── baseline_rule_A.jsonl  # 纯规则基线 A 榜预测文件 (Score: 0.5568)
+│   ├── sapbert_rule_A.jsonl   # GPU SapBERT 增强版 A 榜预测文件 (Score: 0.5750)
+│   ├── qwen3_8b_zeroshot_A.jsonl # Qwen3-8B Zero-Shot A 榜预测文件 (Score: 0.5992)
+│   ├── qwen3_8b_v2_optimized_A.jsonl # [最新优化] V2 区域加权与全段落去噪预测文件
+│   └── qwen3_8b_final_A.jsonl # SapBERT + Qwen3-8B LoRA 预测文件 (Score: 0.5161)
 └── tests/
     └── test_metrics.py        # 官方指标与解析器测试
 ```
