@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Competition raw data (large files / zip)
+data/raw/*.zip
+data/raw/PatientPheX-V1-A/*.obo
+data/raw/PatientPheX-V1-A/*.zip
+
+# Temporary files & outputs
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+submissions/*.zip
