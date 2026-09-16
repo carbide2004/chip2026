@@ -50,26 +50,22 @@ class Qwen35AssocModel:
         self, patient_name: str, phenotype_text: str, context_sentence: str
     ) -> bool:
         """Ask LLM whether the specific phenotype belongs to the target patient."""
-        messages = [
-            {
-                "role": "user",
-                "content": (
-                    f"Clinical excerpt: {context_sentence}\n"
-                    f"Does the patient ({patient_name}) have {phenotype_text}? "
-                    "Answer strictly with YES or NO."
-                ),
-            }
-        ]
-        text_in = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = self.tokenizer([text_in], return_tensors="pt").to(self.model.device)
+        # Use thinking prefill to bypass lengthy CoT loop in Qwen3.5
+        prompt = (
+            f"Context: {context_sentence}\n"
+            f"Question: Does the patient ({patient_name}) have {phenotype_text}?\n"
+            f"<think>\nAnalyze whether {phenotype_text} is explicitly confirmed for {patient_name}.\n</think>\n"
+            "Answer (YES or NO):"
+        )
+        inputs = self.tokenizer([prompt], return_tensors="pt").to(self.model.device)
 
         with torch.no_grad():
-            gen_ids = self.model.generate(**inputs, max_new_tokens=32, do_sample=False)
+            gen_ids = self.model.generate(**inputs, max_new_tokens=5, do_sample=False)
             gen_ids = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, gen_ids)]
             response = self.tokenizer.batch_decode(gen_ids, skip_special_tokens=True)[0].strip().upper()
 
-        # If answer explicitly starts with NO, reject
-        if response.startswith("NO"):
+        # If answer explicitly indicates NO, reject
+        if "NO" in response and "YES" not in response:
             return False
         return True
 
