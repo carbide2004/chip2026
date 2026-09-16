@@ -26,10 +26,12 @@ chip2026-patientphex/
 │   ├── inference_8b.py        # [GPU] Qwen3.5 + SapBERT 端到端推理脚本
 │   └── prepare_sft_data.py    # [GPU] Qwen3.5 指令微调数据构造
 ├── scripts/
-│   └── auto_qwen35_9b_pipeline.py # Qwen3.5-9B 后台自动下载、Zero-shot与LoRA/QLoRA微调流水线
+│   ├── run_fast_inference.py  # [GPU] 流式实时推理与 A 榜预测文件生成脚本
+│   └── auto_qwen3_8b_pipeline.py # Qwen3-8B 自动化下载、Zero-shot与16-bit LoRA微调流水线
 ├── submissions/
 │   ├── baseline_rule_A.jsonl  # 纯规则基线 A 榜预测文件
-│   └── sapbert_rule_A.jsonl   # GPU SapBERT 增强版 A 榜预测文件
+│   ├── sapbert_rule_A.jsonl   # GPU SapBERT 增强版 A 榜预测文件
+│   └── qwen3_8b_final_A.jsonl # [最新] SapBERT + Qwen3-8B LoRA 最终 A 榜预测文件
 └── tests/
     └── test_metrics.py        # 官方指标与解析器测试
 ```
@@ -97,34 +99,19 @@ python3 src/prepare_sft_data.py
 - `data/processed/sft_negation.json`: 句子级表型否定二分类数据（YES / NO）
 - `data/processed/sft_association.json`: 患者临床病史切片与真实确诊 HPO ID 关联问答
 
-#### 3. 运行 8B/9B LoRA 微调（以 Qwen3.5-9B 为例）
-推荐使用 **LLaMA-Factory** 或 **Unsloth**（单张 RTX 3090/4090 或 A10/A100 几十分钟即可训完）：
+#### 3. 运行 8B 16-bit LoRA 微调（以 Qwen3-8B 为例）
 
 ```bash
-# 使用 llama-factory 示例
-llamafactory-cli train \
-    --stage sft \
-    --do_train \
-    --model_name_or_path Qwen/Qwen3.5-9B \
-    --dataset patient_assoc \
-    --template qwen \
-    --finetuning_type lora \
-    --output_dir saves/qwen35-patient-lora \
-    --per_device_train_batch_size 2 \
-    --gradient_accumulation_steps 8 \
-    --lr_scheduler_type cosine \
-    --logging_steps 10 \
-    --save_steps 100 \
-    --learning_rate 1e-4 \
-    --num_train_epochs 3.0 \
-    --fp16
+# 执行本地自动化下载、Zero-shot评测与LoRA训练
+python3 scripts/auto_qwen3_8b_pipeline.py
 ```
 
-#### 4. 推理与提交
-微调后加载权重预测 A 榜测试集（或直接使用 Zero-shot 推理）：
+#### 4. 流式推理与提交文件生成
+加载微调后的 LoRA 权重流式预测 A 榜测试集：
 ```bash
-python3 src/inference_8b.py --base_model Qwen/Qwen3.5-9B --lora_dir saves/qwen35-patient-lora --output submissions/qwen35_final_A.jsonl
+python3 scripts/run_fast_inference.py
 ```
+*预测结果输出路径：`submissions/qwen3_8b_final_A.jsonl`*
 
 ---
 
