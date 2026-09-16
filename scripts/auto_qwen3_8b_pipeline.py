@@ -38,7 +38,7 @@ def download_qwen3_8b(max_retries: int = 50) -> str:
     log(f"Starting download for {MODEL_ID} from ModelScope...")
     api = HubApi()
     files = api.get_model_files(MODEL_ID)
-    safetensors_files = [f for f in files if "safetensors" in f.get("Path", "")]
+    safetensors_files = [f for f in files if f.get("Path", "").endswith(".safetensors")]
     total_expected_bytes = sum(f.get("Size", 0) for f in safetensors_files)
     total_expected_gb = total_expected_bytes / (1024**3)
     log(f"Model {MODEL_ID} contains {len(safetensors_files)} safetensors partitions, total {total_expected_gb:.2f} GB.")
@@ -48,7 +48,7 @@ def download_qwen3_8b(max_retries: int = 50) -> str:
             log(f"Download attempt {attempt}/{max_retries}...")
             model_dir = snapshot_download(MODEL_ID)
             p = Path(model_dir)
-            st_files = list(p.glob("*.safetensors"))
+            st_files = [f for f in p.glob("*.safetensors") if not f.name.endswith(".index.json")]
             total_down_bytes = sum(f.stat().st_size for f in st_files)
             total_down_gb = total_down_bytes / (1024**3)
             log(f"Local files in {model_dir}: {len(st_files)} files, {total_down_gb:.2f} GB downloaded.")
