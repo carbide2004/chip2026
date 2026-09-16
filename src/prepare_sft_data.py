@@ -1,4 +1,4 @@
-"""Construct SFT instruction-tuning datasets for 8B models (e.g. Qwen2.5-7B/8B).
+"""Construct SFT instruction-tuning datasets for 8B/9B models (e.g. Qwen3.5-9B or Qwen3-8B).
 
 Generates two datasets in standard Alpaca format:
 1. data/processed/sft_negation.json: Sentence-level phenotype negation classification (null vs NO).

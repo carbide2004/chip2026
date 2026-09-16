@@ -6,8 +6,14 @@
 """
 
 from pathlib import Path
+import os
 import sys
 from typing import Any, Dict, List, Optional, Tuple
+import json
+
+# Ensure domestic mirror by default if not specified
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
@@ -92,31 +98,96 @@ class SapBERTRetriever:
         self.index = self.faiss.IndexFlatIP(dim)
         self.index.add(mat)
         print(f"FAISS index created with {self.index.ntotal} vectors.")
+        self.save_index()
+
+    def save_index(self) -> None:
+        """Save FAISS index and metadata to index_dir."""
+        self.index_dir.mkdir(parents=True, exist_ok=True)
+        idx_file = self.index_dir / "sapbert_hpo.faiss"
+        meta_file = self.index_dir / "sapbert_meta.json"
+        print(f"Saving FAISS index to {idx_file}...")
+        self.faiss.write_index(self.index, str(idx_file))
+        with open(meta_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "ids_list": self.ids_list,
+                "phrases_list": self.phrases_list,
+            }, f, ensure_ascii=False)
+        print("Index saved successfully.")
+
+    def load_index(self) -> bool:
+        """Attempt to load existing FAISS index and metadata."""
+        idx_file = self.index_dir / "sapbert_hpo.faiss"
+        meta_file = self.index_dir / "sapbert_meta.json"
+        if not idx_file.exists() or not meta_file.exists():
+            return False
+        print(f"Loading existing FAISS index from {idx_file}...")
+        self.index = self.faiss.read_index(str(idx_file))
+        with open(meta_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            self.ids_list = data["ids_list"]
+            self.phrases_list = data["phrases_list"]
+        print(f"FAISS index loaded ({self.index.ntotal} terms).")
+        return True
 
     def search_candidates(
         self, query: str, top_k: int = 5
     ) -> List[Tuple[str, str, float]]:
         """Search Top-K closest HPO concepts for a given phrase query."""
+        res = self.search_candidates_batch([query], top_k=top_k)
+        return res[0] if res else []
+
+    def search_candidates_batch(
+        self, queries: List[str], top_k: int = 5, batch_size: int = 128
+    ) -> List[List[Tuple[str, str, float]]]:
+        """Search Top-K closest HPO concepts for a batch of queries."""
         if self.index is None:
-            raise RuntimeError("Index not built. Call build_index() first.")
+            if not self.load_index():
+                raise RuntimeError("Index not built. Call build_index() first.")
 
-        import numpy as np
+        if not queries:
+            return []
 
+        all_results = []
         with self.torch.no_grad():
-            inputs = self.tokenizer(
-                [query],
-                padding=True,
-                truncation=True,
-                max_length=32,
-                return_tensors="pt",
-            ).to(self.device)
-            outputs = self.model(**inputs)
-            cls_rep = outputs.last_hidden_state[:, 0, :]
-            q_norm = (cls_rep / cls_rep.norm(dim=1, keepdim=True)).cpu().numpy().astype("float32")
+            for i in range(0, len(queries), batch_size):
+                batch = queries[i : i + batch_size]
+                inputs = self.tokenizer(
+                    batch,
+                    padding=True,
+                    truncation=True,
+                    max_length=32,
+                    return_tensors="pt",
+                ).to(self.device)
+                outputs = self.model(**inputs)
+                cls_rep = outputs.last_hidden_state[:, 0, :]
+                q_norm = (cls_rep / cls_rep.norm(dim=1, keepdim=True)).cpu().numpy().astype("float32")
+                scores, indices = self.index.search(q_norm, top_k)
+                for s_row, idx_row in zip(scores, indices):
+                    row_res = []
+                    for s, idx in zip(s_row, idx_row):
+                        if idx >= 0:
+                            row_res.append((self.ids_list[idx], self.phrases_list[idx], float(s)))
+                    all_results.append(row_res)
+        return all_results
 
-        scores, indices = self.index.search(q_norm, top_k)
-        results = []
-        for score, idx in zip(scores[0], indices[0]):
-            if idx >= 0:
-                results.append((self.ids_list[idx], self.phrases_list[idx], float(score)))
-        return results
+
+if __name__ == "__main__":
+    obo = repo_root / "data" / "raw" / "PatientPheX-V1-A" / "hp.obo"
+    retriever = SapBERTRetriever(obo_path=str(obo))
+    if not retriever.load_index():
+        retriever.build_index(batch_size=512)
+
+    test_queries = [
+        "SNHL",
+        "developmental delays",
+        "diabetes",
+        "high blood pressure",
+        "intellectual disability",
+        "short stature",
+    ]
+    print("\nTesting SapBERT Candidate Search:")
+    for q in test_queries:
+        res = retriever.search_candidates(q, top_k=3)
+        print(f"\nQuery: '{q}'")
+        for hpo_id, phrase, score in res:
+            print(f"  -> {hpo_id} ({phrase}): score={score:.4f}")

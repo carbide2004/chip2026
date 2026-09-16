@@ -1,7 +1,9 @@
 # CHIP2026 PatientPheX: 表型概念识别与患者个体化关联
 
+- **比赛官方链接**：[CHIP2026 面向生物医学全文的特定患者表型概念识别任务 (天池)](https://tianchi.aliyun.com/competition/entrance/532512)
+
 本项目针对 **CHIP2026 面向生物医学全文的特定患者表型概念识别任务 (PatientPheX)** 开发。
-项目包含完整的**规则基线 (CPU即跑)** 与 **GPU 进阶方案 (SapBERT 软匹配 + 8B LLM 判别/微调)**。
+项目包含完整的**规则基线 (CPU即跑)** 与 **GPU 进阶方案 (SapBERT 软匹配 + Qwen3.5 LLM 判别/微调)**。
 
 ---
 
@@ -12,18 +14,24 @@ chip2026-patientphex/
 ├── README.md                  # 本说明文档
 ├── data/
 │   ├── raw/                   # 官方原始数据集 (train, A榜测试集, hp.obo)
-│   └── processed/             # 预处理缓存与 SFT 训练数据
+│   └── processed/             # 预处理缓存、FAISS 向量库与 SFT 训练数据
 ├── src/
 │   ├── data_loader.py         # HPO本体解析 (hp.obo) 与 JSONL 读写
 │   ├── metrics.py             # 官方全套评测指标 (Mention F1, Doc F1, Micro F1, Macro F1)
 │   ├── dictionary_extractor.py# 词典前缀索引与实体最长匹配抽取
 │   ├── baseline_rule.py       # 规则基线 (CPU可直接运行，整体分 0.5675)
-│   ├── sapbert_matcher.py     # [GPU/进阶] SapBERT 实体召回与 HPO 向量检索脚本
-│   └── prepare_sft_data.py    # [GPU/进阶] 8B 大模型微调数据构造 (否定判定 + 患者关联)
+│   ├── sapbert_matcher.py     # [GPU] SapBERT 实体召回与 HPO 向量检索 (FAISS持久化)
+│   ├── pipeline_gpu.py        # [GPU] SapBERT 软匹配端到端全量评测与提交生成
+│   ├── evaluate_qwen35.py     # [GPU] 基线 vs SapBERT vs +Qwen3.5 三代方案横向对比评测
+│   ├── inference_8b.py        # [GPU] Qwen3.5 + SapBERT 端到端推理脚本
+│   └── prepare_sft_data.py    # [GPU] Qwen3.5 指令微调数据构造
+├── scripts/
+│   └── auto_qwen35_9b_pipeline.py # Qwen3.5-9B 后台自动下载、Zero-shot与LoRA/QLoRA微调流水线
 ├── submissions/
-│   └── baseline_rule_A.jsonl  # 已生成的 A 榜提交文件
+│   ├── baseline_rule_A.jsonl  # 纯规则基线 A 榜预测文件
+│   └── sapbert_rule_A.jsonl   # GPU SapBERT 增强版 A 榜预测文件
 └── tests/
-    └── test_metrics.py        # 指标与解析器测试
+    └── test_metrics.py        # 官方指标与解析器测试
 ```
 
 ---
@@ -89,7 +97,7 @@ python3 src/prepare_sft_data.py
 - `data/processed/sft_negation.json`: 句子级表型否定二分类数据（YES / NO）
 - `data/processed/sft_association.json`: 患者临床病史切片与真实确诊 HPO ID 关联问答
 
-#### 3. 运行 8B LoRA 微调（以 Qwen2.5-7B/8B 为例）
+#### 3. 运行 8B/9B LoRA 微调（以 Qwen3.5-9B 为例）
 推荐使用 **LLaMA-Factory** 或 **Unsloth**（单张 RTX 3090/4090 或 A10/A100 几十分钟即可训完）：
 
 ```bash
@@ -97,11 +105,11 @@ python3 src/prepare_sft_data.py
 llamafactory-cli train \
     --stage sft \
     --do_train \
-    --model_name_or_path Qwen/Qwen2.5-7B-Instruct \
+    --model_name_or_path Qwen/Qwen3.5-9B \
     --dataset patient_assoc \
     --template qwen \
     --finetuning_type lora \
-    --output_dir saves/qwen-patient-lora \
+    --output_dir saves/qwen35-patient-lora \
     --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 8 \
     --lr_scheduler_type cosine \
@@ -113,9 +121,9 @@ llamafactory-cli train \
 ```
 
 #### 4. 推理与提交
-微调后加载权重预测 A 榜测试集：
+微调后加载权重预测 A 榜测试集（或直接使用 Zero-shot 推理）：
 ```bash
-python3 src/inference_8b.py --lora_dir saves/qwen-patient-lora --output submissions/8b_final_A.jsonl
+python3 src/inference_8b.py --base_model Qwen/Qwen3.5-9B --lora_dir saves/qwen35-patient-lora --output submissions/qwen35_final_A.jsonl
 ```
 
 ---

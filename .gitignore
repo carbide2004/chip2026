@@ -40,3 +40,6 @@ data/raw/PatientPheX-V1-A/*.zip
 .coverage
 htmlcov/
 submissions/*.zip
+.DS_Store
+data/processed/sapbert_index/
+saves/

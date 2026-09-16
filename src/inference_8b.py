@@ -1,87 +1,106 @@
-"""Run local / GPU inference using fine-tuned 8B model or zero-shot prompt.
+"""Run local / GPU inference using Qwen3.5 (e.g. Qwen/Qwen3.5-9B or Qwen/Qwen3.5-4B) with SapBERT.
 
 Usage:
-  python src/inference_8b.py --base_model Qwen/Qwen2.5-7B-Instruct --lora_dir saves/qwen-patient-lora --output submissions/8b_pred_A.jsonl
+  python src/inference_8b.py --base_model Qwen/Qwen3.5-9B --output submissions/qwen35_pred_A.jsonl
 """
 
 import argparse
 import json
+import os
 from pathlib import Path
+import re
 import sys
 from typing import Any, Dict, List, Set
+
+# Default to domestic mirrors for speed
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 
 from src.data_loader import HPOntology, load_jsonl, save_jsonl
-from src.dictionary_extractor import DictionaryExtractor
+from src.pipeline_gpu import GPUEnhancedPipeline
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base_model", type=str, default="Qwen/Qwen2.5-7B-Instruct")
+    parser.add_argument("--base_model", type=str, default="Qwen/Qwen3.5-9B")
     parser.add_argument("--lora_dir", type=str, default=None)
-    parser.add_argument("--input_file", type=str, default=str(repo_root / "data" / "raw" / "PatientPheX-V1-A" / "PatientPheX-A.jsonl"))
-    parser.add_argument("--obo_file", type=str, default=str(repo_root / "data" / "raw" / "PatientPheX-V1-A" / "hp.obo"))
-    parser.add_argument("--output", type=str, default=str(repo_root / "submissions" / "8b_pred_A.jsonl"))
+    parser.add_argument(
+        "--input_file",
+        type=str,
+        default=str(repo_root / "data" / "raw" / "PatientPheX-V1-A" / "PatientPheX-A.jsonl"),
+    )
+    parser.add_argument(
+        "--obo_file",
+        type=str,
+        default=str(repo_root / "data" / "raw" / "PatientPheX-V1-A" / "hp.obo"),
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=str(repo_root / "submissions" / "qwen35_pred_A.jsonl"),
+    )
     parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--use_modelscope", action="store_true", default=True, help="Download model via ModelScope")
     return parser.parse_args()
+
+
+def load_llm_model(model_name: str, lora_dir: str = None, device: str = "cuda"):
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from peft import PeftModel
+
+    actual_model_path = model_name
+    try:
+        from modelscope import snapshot_download
+        print(f"Checking / downloading {model_name} via ModelScope...")
+        actual_model_path = snapshot_download(model_name)
+        print(f"Model path: {actual_model_path}")
+    except Exception as me:
+        print(f"ModelScope fallback to HF: {me}")
+        actual_model_path = model_name
+
+    tokenizer = AutoTokenizer.from_pretrained(actual_model_path, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        actual_model_path,
+        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto" if device == "cuda" else None,
+        trust_remote_code=True,
+    )
+    if lora_dir:
+        print(f"Loading LoRA weights from {lora_dir}...")
+        model = PeftModel.from_pretrained(model, lora_dir)
+    model.eval()
+    return tokenizer, model
 
 
 def main():
     args = parse_args()
-    print(f"Loading HPO ontology from {args.obo_file}...")
-    hpo = HPOntology(args.obo_file)
-    extractor = DictionaryExtractor(hpo)
+    print(f"Initializing GPU SapBERT Pipeline with {args.obo_file}...")
+    pipeline = GPUEnhancedPipeline(args.obo_file, sim_threshold=0.92)
 
     print(f"Loading LLM pipeline: {args.base_model} (LoRA: {args.lora_dir})...")
-    try:
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        from peft import PeftModel
-
-        tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            args.base_model,
-            torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto" if args.device == "cuda" else None,
-            trust_remote_code=True,
-        )
-        if args.lora_dir:
-            print(f"Loading LoRA weights from {args.lora_dir}...")
-            model = PeftModel.from_pretrained(model, args.lora_dir)
-        model.eval()
-    except Exception as e:
-        print(f"Warning: GPU/transformers dependencies not active or model not loaded ({e}).")
-        print("Please ensure torch, transformers, and peft are installed on your GPU machine.")
-        return
+    tokenizer, model = load_llm_model(args.base_model, args.lora_dir, args.device)
+    import torch
 
     test_docs = load_jsonl(args.input_file)
     print(f"Predicting {len(test_docs)} documents...")
     out_docs = []
 
-    for doc in test_docs:
+    for doc_idx, doc in enumerate(test_docs):
         pmc_id = doc["pmc_id"]
         pmid = doc.get("pmid")
         patients = doc.get("patient", [])
 
-        # Subtask 1: Exact offset matching from dictionary
-        extracted = extractor.extract_from_doc(doc)
-        pred_entities = []
-        candidate_hpos = []
-        for ent in extracted:
-            pred_entities.append({
-                "identifier": ent.identifier,
-                "type": ent.type,
-                "offset": ent.offset,
-                "length": ent.length,
-                "text": ent.text,
-                "note": None,
-            })
-            if ent.identifier != "-1":
-                candidate_hpos.append(ent.identifier)
+        # Subtask 1: GPU SapBERT soft-matching + dictionary
+        gpu_pred = pipeline.predict_doc(doc, use_sapbert=True)
+        pred_entities = gpu_pred["entities"]
 
-        candidate_hpos = sorted(list(set(candidate_hpos)))
+        candidate_hpos = sorted(list(set([
+            e["identifier"] for e in pred_entities if e["identifier"] != "-1" and e.get("note") is None
+        ])))
 
         # Extract clinical presentation
         clinical_passages = []
@@ -93,11 +112,15 @@ def main():
         if not full_clinical_text:
             full_clinical_text = "\n\n".join([s.get("text", "") for s in doc.get("full_text", [])[:5]])
 
-        # Subtask 2: Query LLM for each patient
+        # Subtask 2: Query Qwen3.5 for each patient
         pred_associations = []
         for p in patients:
             pid = p["patient_id"]
             mentions = [m.get("text", "") for m in p.get("mention", [])]
+
+            if not candidate_hpos:
+                pred_associations.append({"patient_id": pid, "phenotype": []})
+                continue
 
             prompt = (
                 f"You are an expert clinical geneticist. Determine which of the candidate HPO phenotype IDs "
@@ -117,7 +140,6 @@ def main():
                 response = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)[0].strip()
 
             # Parse JSON from LLM response
-            import re
             m = re.search(r"\[.*?\]", response, re.DOTALL)
             assigned_hpos = []
             if m:
@@ -126,7 +148,7 @@ def main():
                 except Exception:
                     assigned_hpos = []
 
-            # Filter to candidates
+            # Filter to valid candidates
             assigned_hpos = [h for h in assigned_hpos if h in candidate_hpos]
 
             pred_associations.append({
@@ -140,9 +162,11 @@ def main():
             "entities": pred_entities,
             "association": pred_associations,
         })
+        if (doc_idx + 1) % 10 == 0 or doc_idx == len(test_docs) - 1:
+            print(f"Processed {doc_idx + 1}/{len(test_docs)} docs...")
 
     save_jsonl(out_docs, args.output)
-    print(f"Predictions saved to {args.output}")
+    print(f"Predictions successfully saved to {args.output}")
 
 
 if __name__ == "__main__":
