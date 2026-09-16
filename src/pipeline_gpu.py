@@ -48,21 +48,13 @@ class GPUEnhancedPipeline:
             self.retriever.build_index(batch_size=512)
 
     def detect_negation(self, context_sentence: str, entity_text: str) -> bool:
-        """Enhanced rule-based negation and normality detection."""
+        """Rule-based negation detection."""
         pos = context_sentence.lower().find(entity_text.lower())
         if pos != -1:
-            pre_window = context_sentence[max(0, pos - 60):pos]
-            post_window = context_sentence[pos + len(entity_text):min(len(context_sentence), pos + len(entity_text) + 40)]
-            neg_pat = (
-                r"\b(no|not|none|without|denies|denied|absent|absence of|negative for|free of|"
-                r"unremarkable|normal|within normal limits|ruled out|unaffected|healthy|"
-                r"no history of|no signs of|no evidence of|failed to reveal|neither|nor)\b"
-            )
-            post_pat = (
-                r"\b(ruled out|absent|negative|unremarkable|normal|were excluded|was excluded|"
-                r"not observed|not detected|were unremarkable|was unremarkable|within normal limits)\b"
-            )
-            if re.search(neg_pat, pre_window, re.IGNORECASE) or re.search(post_pat, post_window, re.IGNORECASE):
+            pre_window = context_sentence[max(0, pos - 45):pos]
+            post_window = context_sentence[pos + len(entity_text):min(len(context_sentence), pos + len(entity_text) + 30)]
+            neg_pat = r"\b(no|not|without|denies|denied|absent|absence of|negative for|free of|unremarkable|normal)\b"
+            if re.search(neg_pat, pre_window, re.IGNORECASE) or re.search(r"\b(ruled out|absent|negative)\b", post_window, re.IGNORECASE):
                 return True
         return False
 
