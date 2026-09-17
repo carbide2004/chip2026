@@ -29,10 +29,8 @@ env/
 venv/
 ENV/
 
-# Competition raw data (large files / zip)
-data/raw/*.zip
-data/raw/PatientPheX-V1-A/*.obo
-data/raw/PatientPheX-V1-A/*.zip
+# Competition raw and processed data
+data/
 
 # Temporary files & outputs
 *.log
@@ -40,6 +38,6 @@ data/raw/PatientPheX-V1-A/*.zip
 .coverage
 htmlcov/
 submissions/*.zip
+submissions/*.txt
 .DS_Store
-data/processed/sapbert_index/
 saves/
