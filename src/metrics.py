@@ -6,7 +6,8 @@ Subtask 1: Full-Text Phenotype Concept Recognition
       Predicted correctly with note="NO" excluded from eval. Predicted without note="NO" counts as FP.
       Not predicted: ignored.
     * composite phenotype: split by semicolon, each ID evaluated independently.
-    * ID = "-1": span match is sufficient.
+    * Gold ID = "-1": span match is sufficient. A predicted "-1" is not a wildcard
+      for a gold entity that has a valid HPO ID.
   - Document-level (P_doc, R_doc, F1_doc): micro-averaged across documents on unique HPO ID sets.
 
 Subtask 2: Patient-Specific Phenotype Concept Recognition
@@ -78,18 +79,20 @@ def evaluate_subtask1_mention(
             for id_tok in _split_identifiers(ent.get("identifier")):
                 pred_positives.add((offset, length, id_tok))
 
-        # Matching:
-        # If identifier == "-1", span match is enough
-        # We handle exact matching between gold and pred
+        # Matching is one-to-one at the split identifier-unit level. A gold
+        # no-ID entity is span-only, but predicting -1 must not turn a valid
+        # gold HPO identifier into a true positive.
         matched_gold: Set[Tuple[int, int, str]] = set()
         matched_pred: Set[Tuple[int, int, str]] = set()
 
-        for p in pred_positives:
+        for p in sorted(pred_positives):
             p_off, p_len, p_id = p
-            for g in gold_positives:
+            for g in sorted(gold_positives):
+                if g in matched_gold:
+                    continue
                 g_off, g_len, g_id = g
                 if p_off == g_off and p_len == g_len:
-                    if g_id == "-1" or p_id == "-1" or p_id == g_id:
+                    if g_id == "-1" or p_id == g_id:
                         matched_gold.add(g)
                         matched_pred.add(p)
                         break

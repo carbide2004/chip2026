@@ -13,9 +13,13 @@ class HPOTerm:
     id: str
     name: str
     synonyms: List[str] = field(default_factory=list)
+    synonym_scopes: Dict[str, str] = field(default_factory=dict)
+    alt_ids: List[str] = field(default_factory=list)
     is_a: List[str] = field(default_factory=list)
     definition: str = ""
     is_obsolete: bool = False
+    replaced_by: List[str] = field(default_factory=list)
+    consider: List[str] = field(default_factory=list)
     is_sub_abnormality: bool = False
 
 
@@ -25,6 +29,7 @@ class HPOntology:
     def __init__(self, obo_path: str):
         self.obo_path = Path(obo_path)
         self.terms: Dict[str, HPOTerm] = {}
+        self.alt_id_to_id: Dict[str, str] = {}
         self.text_to_ids: Dict[str, Set[str]] = {}
         self._load_obo()
         self._filter_phenotypic_abnormality()
@@ -44,8 +49,12 @@ class HPOntology:
                         self._save_term(current_term)
                     current_term = {
                         "synonyms": [],
+                        "synonym_scopes": {},
+                        "alt_ids": [],
                         "is_a": [],
                         "is_obsolete": False,
+                        "replaced_by": [],
+                        "consider": [],
                     }
                 elif line.startswith("[") and line.endswith("]"):
                     # Another stanza type like [Typedef]
@@ -62,15 +71,23 @@ class HPOntology:
                         if match:
                             current_term["definition"] = match.group(1)
                     elif line.startswith("synonym:"):
-                        match = re.search(r'"([^"]*)"', line[8:])
+                        match = re.search(r'^synonym:\s+"([^"]*)"\s+(EXACT|BROAD|NARROW|RELATED)', line)
                         if match:
-                            current_term["synonyms"].append(match.group(1))
+                            text, scope = match.groups()
+                            current_term["synonyms"].append(text)
+                            current_term["synonym_scopes"][text] = scope
+                    elif line.startswith("alt_id:"):
+                        current_term["alt_ids"].append(line[7:].strip())
                     elif line.startswith("is_a:"):
                         parent_id = line[5:].split("!")[0].strip()
                         current_term["is_a"].append(parent_id)
                     elif line.startswith("is_obsolete:"):
                         if line[12:].strip().lower() == "true":
                             current_term["is_obsolete"] = True
+                    elif line.startswith("replaced_by:"):
+                        current_term["replaced_by"].append(line[12:].strip())
+                    elif line.startswith("consider:"):
+                        current_term["consider"].append(line[9:].strip())
 
         if current_term and "id" in current_term:
             self._save_term(current_term)
@@ -80,11 +97,17 @@ class HPOntology:
             id=d["id"],
             name=d.get("name", ""),
             synonyms=d.get("synonyms", []),
+            synonym_scopes=d.get("synonym_scopes", {}),
+            alt_ids=d.get("alt_ids", []),
             is_a=d.get("is_a", []),
             definition=d.get("definition", ""),
             is_obsolete=d.get("is_obsolete", False),
+            replaced_by=d.get("replaced_by", []),
+            consider=d.get("consider", []),
         )
         self.terms[term.id] = term
+        for alt_id in term.alt_ids:
+            self.alt_id_to_id[alt_id] = term.id
 
     def _filter_phenotypic_abnormality(self) -> None:
         """Mark terms belonging to Phenotypic abnormality (HP:0000118) branch."""
@@ -126,8 +149,21 @@ class HPOntology:
                 self.text_to_ids.setdefault(key, set()).add(term_id)
 
     def lookup_exact(self, text: str) -> Set[str]:
-        """Lookup HPO IDs matching lowercase text exactly."""
+        """Lookup active in-branch HPO IDs matching lowercase text exactly."""
         return self.text_to_ids.get(text.strip().lower(), set())
+
+    def resolve_id(self, identifier: str) -> Optional[str]:
+        """Resolve an alternative or obsolete HPO ID when OBO gives one answer.
+
+        Ambiguous ``consider`` suggestions are intentionally not auto-resolved.
+        """
+        identifier = self.alt_id_to_id.get(identifier, identifier)
+        term = self.terms.get(identifier)
+        if term is None:
+            return None
+        if term.is_obsolete:
+            return term.replaced_by[0] if len(term.replaced_by) == 1 else None
+        return identifier
 
 
 def load_jsonl(file_path: str) -> List[Dict[str, Any]]:
